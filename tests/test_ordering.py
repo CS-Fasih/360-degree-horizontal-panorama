@@ -70,6 +70,27 @@ def test_validation_rejects_sequence_without_last_to_first_overlap() -> None:
     assert any("insufficient overlap" in error for error in errors)
 
 
+def test_soft_frames_warn_but_do_not_block_valid_overlap() -> None:
+    count = 5
+    order = list(range(count))
+    matches: dict[tuple[int, int], PairwiseMatch] = {}
+    for left in range(count):
+        for right in range(left + 1, count):
+            is_neighbor = right == left + 1 or (left == 0 and right == count - 1)
+            matches[(left, right)] = (
+                _strong_match(left, right) if is_neighbor else _weak_match(left, right)
+            )
+    qualities = [ImageQuality(1600, 900, 4.0, 300, 125.0) for _ in range(count)]
+
+    warnings, errors, closure, _confidence = SequenceAnalyzer._validate(
+        qualities, matches, order, auto_order=False
+    )
+
+    assert closure
+    assert not errors
+    assert any("look soft" in warning for warning in warnings)
+
+
 def _periodic_texture(width: int, height: int) -> np.ndarray:
     rng = np.random.default_rng(2026)
     image = np.full((height, width, 3), 218, dtype=np.uint8)

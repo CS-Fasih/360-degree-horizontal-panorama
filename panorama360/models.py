@@ -68,10 +68,13 @@ class PairwiseMatch:
     def is_usable(self) -> bool:
         return (
             self.homography is not None
-            and self.inliers >= 14
-            and self.inlier_ratio >= 0.16
-            and self.coverage >= 0.008
-            and self.median_error <= 6.5
+            # These are deliberately tolerant because a soft indoor frame can
+            # still carry a stable geometric signal. The bundle-adjustment and
+            # seam stages provide additional safeguards before export.
+            and self.inliers >= 10
+            and self.inlier_ratio >= 0.12
+            and self.coverage >= 0.005
+            and self.median_error <= 8.5
         )
 
     @property

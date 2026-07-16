@@ -18,6 +18,7 @@ The program never invents missing sky or ground. If the photos cannot support a 
 - Crops to a fully covered rectangular band without generating missing content.
 - Reports real analysis/rendering progress in a responsive GUI.
 - Provides a zoomable preview and saves full-quality JPEG, PNG, TIFF, or WebP output.
+- Keeps soft-but-matchable photos as warnings and retries matching/calibration with safer fallback profiles instead of failing on blur alone.
 
 ## Install and run
 

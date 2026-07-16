@@ -300,7 +300,7 @@ class SequenceAnalyzer:
         warnings: list[str] = []
         errors: list[str] = []
 
-        weak_features = [index + 1 for index, item in enumerate(qualities) if item.feature_count < 100]
+        weak_features = [index + 1 for index, item in enumerate(qualities) if item.feature_count < 45]
         if weak_features:
             errors.append(
                 "Not enough recognizable detail was found in photo(s) "
@@ -308,11 +308,12 @@ class SequenceAnalyzer:
                 + "."
             )
         soft_photos = [index + 1 for index, item in enumerate(qualities) if item.blur_score < 55.0]
-        very_soft = [index + 1 for index, item in enumerate(qualities) if item.blur_score < 18.0]
-        if very_soft:
-            errors.append("Photo(s) " + ", ".join(map(str, very_soft)) + " appear too blurry to align reliably.")
-        elif soft_photos:
-            warnings.append("Photo(s) " + ", ".join(map(str, soft_photos)) + " look soft and may reduce seam quality.")
+        if soft_photos:
+            warnings.append(
+                "Photo(s) "
+                + ", ".join(map(str, soft_photos))
+                + " look soft; tolerant feature matching and seam blending will be used."
+            )
 
         aspects = np.array([item.width / item.height for item in qualities], dtype=np.float64)
         if float(aspects.max() / aspects.min()) > 1.25:

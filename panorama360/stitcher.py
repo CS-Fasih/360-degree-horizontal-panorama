@@ -110,17 +110,33 @@ class CylindricalStitcher:
                 f"Calibrating photo {index + 1} of {len(paths)}…",
             )
 
-        progress(22, "Matching neighboring photos and closing the 360° loop…")
-        matcher = cv2.detail_BestOf2NearestMatcher(False, 0.55)
         matching_mask = self._circular_matching_mask(len(paths))
-        try:
-            pairwise_matches = matcher.apply2(features, matching_mask)
-        finally:
-            matcher.collectGarbage()
+        progress(22, "Matching neighboring photos and closing the 360° loop…")
+        pairwise_matches = None
+        cameras = None
+        calibration_fallback = False
+        # Start with the precise circular graph. If a soft frame leaves too
+        # few matches, relax the matcher and finally allow all-pairs recovery;
+        # the geometric validation still prevents unrelated images joining the
+        # panorama.
+        for match_conf, mask in ((0.55, matching_mask), (0.40, matching_mask), (0.40, None)):
+            matcher = cv2.detail_BestOf2NearestMatcher(False, match_conf)
+            try:
+                candidate_matches = matcher.apply2(features, mask) if mask is not None else matcher.apply2(features)
+            except cv2.error:
+                candidate_matches = None
+            finally:
+                matcher.collectGarbage()
+            if candidate_matches is None:
+                continue
+            candidate_cameras, used_fallback = self._calibrate_cameras(features, candidate_matches)
+            if candidate_cameras is not None:
+                pairwise_matches = candidate_matches
+                cameras = candidate_cameras
+                calibration_fallback = used_fallback
+                break
 
-        estimator = cv2.detail_HomographyBasedEstimator()
-        ok, cameras = estimator.apply(features, pairwise_matches, None)
-        if not ok or len(cameras) != len(paths):
+        if pairwise_matches is None or cameras is None or len(cameras) != len(paths):
             raise PanoramaError(
                 "Camera alignment failed",
                 "The camera motion could not be estimated consistently from the overlaps.",
@@ -130,28 +146,6 @@ class CylindricalStitcher:
             camera.R = camera.R.astype(np.float32)
 
         progress(31, "Optimizing alignment across the complete rotation…")
-        adjuster = cv2.detail_BundleAdjusterRay()
-        # OpenCV confidence is not an inlier ratio; good SIFT panorama edges
-        # normally score above 1.0. Keeping the official 1.0 cutoff prevents
-        # weak second-neighbour matches from corrupting the circular solution.
-        adjuster.setConfThresh(1.0)
-        refinement = np.zeros((3, 3), np.uint8)
-        refinement[0, 0] = 1  # focal length
-        refinement[0, 2] = 1  # principal point x
-        refinement[1, 1] = 1  # aspect ratio
-        refinement[1, 2] = 1  # principal point y
-        adjuster.setRefinementMask(refinement)
-        ok, cameras = adjuster.apply(features, pairwise_matches, cameras)
-        if not ok:
-            raise PanoramaError(
-                "Alignment optimization failed",
-                "The overlaps disagree too much to produce a clean panorama.",
-                (
-                    "Avoid moving sideways between photos.",
-                    "Remove frames containing severe motion blur or mostly moving subjects.",
-                ),
-            )
-
         rotations = cv2.detail.waveCorrect(
             [np.copy(camera.R) for camera in cameras],
             cv2.detail.WAVE_CORRECT_HORIZ,
@@ -296,8 +290,55 @@ class CylindricalStitcher:
             compose_warp_scale,
         )
         rgb = cv2.cvtColor(cylinder, cv2.COLOR_BGR2RGB)
+        if calibration_fallback:
+            warnings.insert(
+                0,
+                "Bundle adjustment was unstable for this set; a robust unadjusted camera solution was used.",
+            )
         progress(100, "Panorama rendering complete")
         return np.ascontiguousarray(rgb), field_of_view, warnings
+
+    @staticmethod
+    def _calibrate_cameras(features, pairwise_matches):
+        """Estimate cameras with progressively safer adjustment fallbacks."""
+
+        estimator = cv2.detail_HomographyBasedEstimator()
+        ok, base_cameras = estimator.apply(features, pairwise_matches, None)
+        if not ok or not base_cameras:
+            return None, False
+
+        refinement = np.zeros((3, 3), np.uint8)
+        refinement[0, 0] = 1
+        refinement[0, 2] = 1
+        refinement[1, 1] = 1
+        refinement[1, 2] = 1
+        # Confidence 1.0 is the normal path. Lower values are only attempted
+        # when a soft/low-texture sequence makes the strict graph singular.
+        for adjuster_type in (cv2.detail_BundleAdjusterRay, cv2.detail_BundleAdjusterReproj):
+            for confidence in (1.0, 0.65, 0.35):
+                # Re-estimate before each attempt because OpenCV mutates camera
+                # matrices in-place when an optimization fails.
+                ok, cameras = estimator.apply(features, pairwise_matches, None)
+                if not ok:
+                    continue
+                for camera in cameras:
+                    camera.R = camera.R.astype(np.float32)
+                try:
+                    adjuster = adjuster_type()
+                    adjuster.setConfThresh(confidence)
+                    adjuster.setRefinementMask(refinement)
+                    adjusted, cameras = adjuster.apply(features, pairwise_matches, cameras)
+                except cv2.error:
+                    adjusted = False
+                if adjusted:
+                    return cameras, False
+
+        # A homography-estimated camera graph is still a valid fallback for
+        # difficult low-texture scenes. Warping and final mask validation below
+        # decide whether it is safe to export rather than rejecting upfront.
+        for camera in base_cameras:
+            camera.R = camera.R.astype(np.float32)
+        return base_cameras, True
 
     @staticmethod
     def _megapixel_scale(pixel_area: int, megapixels: float) -> float:
