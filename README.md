@@ -53,7 +53,7 @@ sudo apt install libegl1 libgl1 libxkbcommon-x11-0
 
 ## Workflow
 
-1. Select all original photos from one continuous horizontal rotation.
+1. Click **Add photos…** and select all original photos at once with Ctrl/Shift (or use **Add folder…** to import a whole folder) from one continuous horizontal rotation.
 2. Wait while the application analyzes overlap and automatically reorders the thumbnails.
 3. Inspect the order. Drag thumbnails if a manual correction is needed; the last item must overlap the first.
 4. Click **Create Panorama**. The displayed order is verified again before expensive rendering begins.

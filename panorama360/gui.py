@@ -192,15 +192,21 @@ class MainWindow(QMainWindow):
         source_title.setObjectName("sectionTitle")
         source_header.addWidget(source_title)
         source_header.addStretch()
-        self.select_button = QPushButton("Select photos…")
+        self.select_button = QPushButton("Add photos…")
         self.select_button.setObjectName("secondaryButton")
+        self.add_folder_button = QPushButton("Add folder…")
+        self.add_folder_button.setObjectName("secondaryButton")
         self.remove_button = QPushButton("Remove selected")
         self.remove_button.setObjectName("secondaryButton")
         source_header.addWidget(self.remove_button)
+        source_header.addWidget(self.add_folder_button)
         source_header.addWidget(self.select_button)
         source_layout.addLayout(source_header)
 
-        hint = QLabel("Drag thumbnails to correct the order manually. The last photo must overlap the first.")
+        hint = QLabel(
+            "Add many photos at once with Ctrl/Shift selection, or import a whole folder. "
+            "Drag thumbnails to correct the order manually."
+        )
         hint.setObjectName("hint")
         source_layout.addWidget(hint)
         self.photo_list = PhotoList()
@@ -257,6 +263,7 @@ class MainWindow(QMainWindow):
         splitter.setSizes([330, 390])
 
         self.select_button.clicked.connect(self._select_photos)
+        self.add_folder_button.clicked.connect(self._add_folder)
         self.remove_button.clicked.connect(self._remove_selected)
         self.analyze_button.clicked.connect(self._start_analysis)
         self.create_button.clicked.connect(self._start_stitching)
@@ -274,7 +281,45 @@ class MainWindow(QMainWindow):
         )
         if not filenames:
             return
-        self._set_photos([Path(filename) for filename in filenames])
+        self._add_paths([Path(filename) for filename in filenames])
+
+    def _add_folder(self) -> None:
+        directory = QFileDialog.getExistingDirectory(
+            self,
+            "Choose a folder containing panorama photos",
+            str(Path.home()),
+        )
+        if not directory:
+            return
+        paths = sorted(
+            (
+                path
+                for path in Path(directory).iterdir()
+                if path.is_file() and path.suffix.lower() in SUPPORTED_EXTENSIONS
+            ),
+            key=lambda path: path.name.casefold(),
+        )
+        if not paths:
+            QMessageBox.information(
+                self,
+                "No supported photos found",
+                "That folder does not contain JPEG, PNG, TIFF, BMP, or WebP photos.",
+            )
+            return
+        self._add_paths(paths)
+
+    def _add_paths(self, paths: list[Path]) -> None:
+        existing = {path.resolve() for path in self.photo_list.paths()}
+        additions = []
+        for path in paths:
+            resolved = path.expanduser().resolve()
+            if resolved not in existing:
+                existing.add(resolved)
+                additions.append(resolved)
+        if not additions:
+            self.status_label.setText("Those photos are already in the selection.")
+            return
+        self._set_photos([*self.photo_list.paths(), *additions])
         if self.photo_list.count() >= 3:
             self._start_analysis()
 
@@ -476,6 +521,7 @@ class MainWindow(QMainWindow):
             self.progress_bar.setFormat("Starting…")
         self.photo_list.setEnabled(not busy)
         self.select_button.setEnabled(not busy)
+        self.add_folder_button.setEnabled(not busy)
         self.remove_button.setEnabled(not busy)
         enough = self.photo_list.count() >= 3
         self.analyze_button.setEnabled(not busy and enough)
