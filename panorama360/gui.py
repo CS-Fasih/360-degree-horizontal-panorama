@@ -198,6 +198,9 @@ class MainWindow(QMainWindow):
         self.add_folder_button.setObjectName("secondaryButton")
         self.remove_button = QPushButton("Remove selected")
         self.remove_button.setObjectName("secondaryButton")
+        self.remove_all_button = QPushButton("Remove all")
+        self.remove_all_button.setObjectName("secondaryButton")
+        source_header.addWidget(self.remove_all_button)
         source_header.addWidget(self.remove_button)
         source_header.addWidget(self.add_folder_button)
         source_header.addWidget(self.select_button)
@@ -264,6 +267,7 @@ class MainWindow(QMainWindow):
 
         self.select_button.clicked.connect(self._select_photos)
         self.add_folder_button.clicked.connect(self._add_folder)
+        self.remove_all_button.clicked.connect(self._remove_all)
         self.remove_button.clicked.connect(self._remove_selected)
         self.analyze_button.clicked.connect(self._start_analysis)
         self.create_button.clicked.connect(self._start_stitching)
@@ -387,6 +391,12 @@ class MainWindow(QMainWindow):
             if enough
             else "Select at least three photos to begin."
         )
+
+    def _remove_all(self) -> None:
+        if self._busy:
+            return
+        self._set_photos([])
+        self.result_info.setText("No panorama created yet")
 
     def _start_analysis(self) -> None:
         paths = self.photo_list.paths()
@@ -522,6 +532,7 @@ class MainWindow(QMainWindow):
         self.photo_list.setEnabled(not busy)
         self.select_button.setEnabled(not busy)
         self.add_folder_button.setEnabled(not busy)
+        self.remove_all_button.setEnabled(not busy)
         self.remove_button.setEnabled(not busy)
         enough = self.photo_list.count() >= 3
         self.analyze_button.setEnabled(not busy and enough)
